@@ -10,9 +10,12 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 include '../includes/header.php';
 ?>
 <div class="container mt-5">
-    <h2>Liste des objets</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Liste des objets</h2>
+        <a href="ajout_objet.php" class="btn btn-success">Ajouter un objet</a>
+    </div>
     <form method="get" class="mb-3">
-        <div class="row">
+        <div class="row g-2 align-items-end">
             <div class="col-md-4">
                 <select name="categorie" class="form-select">
                     <option value="">Toutes les catégories</option>
@@ -23,21 +26,34 @@ include '../includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
+            <div class="col-md-4">
+                <input type="text" name="nom_objet" class="form-control" placeholder="Nom de l'objet" value="<?= isset($_GET['nom_objet']) ? htmlspecialchars($_GET['nom_objet']) : '' ?>">
+            </div>
             <div class="col-md-2">
-                <button type="submit" class="btn btn-secondary">Filtrer</button>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="disponible" id="disponible" <?= isset($_GET['disponible']) ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="disponible">Disponible uniquement</label>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-secondary w-100">Filtrer</button>
             </div>
         </div>
     </form>
 
 <?php
 // Récupération des objets (filtrés ou non)
-$where = '';
+$where = [];
 $params = [];
 if (!empty($_GET['categorie'])) {
-    $where = 'WHERE o.id_categorie = ?';
+    $where[] = 'o.id_categorie = ?';
     $params[] = $_GET['categorie'];
 }
-$sql = 'SELECT o.id_objet, o.nom_objet, c.nom_categorie, m.nom AS proprietaire,
+if (!empty($_GET['nom_objet'])) {
+    $where[] = 'o.nom_objet LIKE ?';
+    $params[] = '%' . $_GET['nom_objet'] . '%';
+}
+$sql = 'SELECT o.id_objet, o.nom_objet, c.nom_categorie, m.nom AS proprietaire, m.id_membre AS proprietaire_id,
         (
             SELECT e.date_retour FROM emprunt e 
             WHERE e.id_objet = o.id_objet AND e.date_retour >= CURDATE()
@@ -45,8 +61,15 @@ $sql = 'SELECT o.id_objet, o.nom_objet, c.nom_categorie, m.nom AS proprietaire,
         ) AS date_retour
         FROM objet o
         JOIN categorie_objet c ON o.id_categorie = c.id_categorie
-        JOIN membre m ON o.id_membre = m.id_membre
-        ' . $where;
+        JOIN membre m ON o.id_membre = m.id_membre';
+if ($where) {
+    $sql .= ' WHERE ' . implode(' AND ', $where);
+}
+// Filtre disponible uniquement
+if (isset($_GET['disponible'])) {
+    $sql .= $where ? ' AND ' : ' WHERE ';
+    $sql .= 'NOT EXISTS (SELECT 1 FROM emprunt e WHERE e.id_objet = o.id_objet AND e.date_retour >= CURDATE())';
+}
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $objets = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -57,9 +80,11 @@ $objets = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <ul class="list-group">
             <?php foreach ($objets as $objet): ?>
                 <li class="list-group-item">
-                    <strong><?= htmlspecialchars($objet['nom_objet']) ?></strong> —
+                    <a href="objet.php?id=<?= $objet['id_objet'] ?>" class="text-decoration-none text-dark">
+                        <strong><?= htmlspecialchars($objet['nom_objet']) ?></strong>
+                    </a> —
                     Catégorie : <?= htmlspecialchars($objet['nom_categorie']) ?> —
-                    Propriétaire : <?= htmlspecialchars($objet['proprietaire']) ?>
+                    Propriétaire : <a href="membre.php?id=<?= $objet['proprietaire_id'] ?>" class="text-decoration-underline"><?= htmlspecialchars($objet['proprietaire']) ?></a>
                     <?php if (!empty($objet['date_retour']) && $objet['date_retour'] >= date('Y-m-d')): ?>
                         <span class="badge bg-warning text-dark ms-2">Emprunté (Retour prévu : <?= htmlspecialchars($objet['date_retour']) ?>)</span>
                     <?php endif; ?>
